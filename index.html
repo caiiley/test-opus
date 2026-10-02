@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoltNexus Grid Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+if (window.tailwind) tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'], mono: ['JetBrains Mono', 'ui-monospace', 'monospace'] },
+      colors: { ink: { 950: '#05080d', 900: '#0a0f17', 850: '#0e141e', 800: '#141c28', 700: '#1e2836' } }
+    }
+  }
+};
+</script>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #05080d; background-image: radial-gradient(circle at 1px 1px, rgba(148,163,184,.06) 1px, transparent 0); background-size: 22px 22px; }
+  .panel { background: linear-gradient(180deg, rgba(20,28,40,.85), rgba(10,15,23,.92)); border: 1px solid #1e2836; border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.03); }
+  .label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #64748b; font-weight: 600; }
+  .num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+  .glow-ok { text-shadow: 0 0 18px rgba(52,211,153,.45); }
+  .glow-warn { text-shadow: 0 0 18px rgba(251,191,36,.45); }
+  .glow-crit { text-shadow: 0 0 18px rgba(244,63,94,.5); }
+  .bar { transition: height .6s cubic-bezier(.2,.8,.2,1); }
+  .fill { transition: width .6s cubic-bezier(.2,.8,.2,1), background-color .3s; }
+  .pulse-dot { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .switch { width: 40px; height: 22px; border-radius: 999px; background: #1e2836; border: 1px solid #334155; position: relative; transition: background .2s, border-color .2s; flex-shrink: 0; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #94a3b8; transition: transform .2s, background .2s; }
+  .switch[aria-checked="true"] { background: rgba(251,191,36,.18); border-color: #f59e0b; }
+  .switch[aria-checked="true"]::after { transform: translateX(18px); background: #fbbf24; }
+  .switch:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #34d399; outline-offset: 2px; }
+  #modal[data-open="false"] { pointer-events: none; opacity: 0; }
+  #modal[data-open="false"] .sheet { transform: translateY(8px) scale(.98); }
+  #modal, #modal .sheet { transition: opacity .18s, transform .18s; }
+  .scroll::-webkit-scrollbar { width: 6px; } .scroll::-webkit-scrollbar-thumb { background: #1e2836; border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body class="min-h-full font-sans text-slate-300 antialiased">
+<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+
+  <!-- Header -->
+  <header class="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <div class="grid h-9 w-9 place-items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10">
+        <svg viewBox="0 0 24 24" class="h-5 w-5 text-emerald-400" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-semibold tracking-tight text-slate-100">Volt<span class="text-emerald-400">Nexus</span></h1>
+        <p class="text-xs text-slate-500">Smart Grid Operations Console</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-xs">
+      <span class="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900 px-3 py-1.5"><span class="pulse-dot h-1.5 w-1.5 rounded-full bg-emerald-400"></span><span class="text-slate-400">Telemetry live</span></span>
+      <span id="clock" class="num text-slate-500"></span>
+    </div>
+  </header>
+
+  <main class="grid grid-cols-1 gap-5 lg:grid-cols-12">
+
+    <!-- 1. System Status Hero -->
+    <section class="panel relative overflow-hidden p-5 sm:p-6 lg:col-span-12" aria-labelledby="hero-title">
+      <div id="hero-accent" class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400 to-transparent"></div>
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h2 id="hero-title" class="label">System Status</h2>
+        <span id="badge" class="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider" role="status" aria-live="polite"></span>
+      </div>
+      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <p class="label mb-2">Grid Health</p>
+          <p class="num text-5xl font-bold leading-none"><span id="health">--</span><span class="ml-1 text-2xl text-slate-500">%</span></p>
+          <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-ink-700"><div id="health-bar" class="fill h-full rounded-full" style="width:0"></div></div>
+        </div>
+        <div>
+          <p class="label mb-2">Live Power Draw</p>
+          <p class="num text-5xl font-bold leading-none text-slate-100"><span id="draw">--</span><span class="ml-1 text-2xl text-slate-500">MW</span></p>
+          <p class="mt-4 text-xs text-slate-500">of <span id="capacity" class="num text-slate-400"></span> MW online capacity</p>
+        </div>
+        <div>
+          <p class="label mb-2">Generation Output</p>
+          <p class="num text-5xl font-bold leading-none text-slate-100"><span id="gen-total">--</span><span class="ml-1 text-2xl text-slate-500">MW</span></p>
+          <p class="mt-4 text-xs text-slate-500">Reserve margin <span id="reserve" class="num"></span></p>
+        </div>
+        <div>
+          <p class="label mb-2">Substations Online</p>
+          <p class="num text-5xl font-bold leading-none text-slate-100"><span id="online">--</span><span class="ml-1 text-2xl text-slate-500">/ 4</span></p>
+          <p class="mt-4 text-xs text-slate-500">Open incidents <span id="open-incidents" class="num text-amber-400"></span></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Live Analytics Panel -->
+    <section class="panel p-5 sm:p-6 lg:col-span-5" aria-labelledby="analytics-title">
+      <div class="mb-5 flex items-center justify-between">
+        <h2 id="analytics-title" class="label">Generation Mix</h2>
+        <span class="text-xs text-slate-500">MW · 2s refresh</span>
+      </div>
+      <div id="chart" class="relative grid h-56 grid-cols-4 items-end gap-4 border-b border-ink-700 px-1" role="img" aria-label="Energy generation by source">
+        <div class="pointer-events-none absolute inset-0 flex flex-col justify-between" aria-hidden="true">
+          <div class="border-t border-dashed border-ink-700"></div><div class="border-t border-dashed border-ink-700"></div><div class="border-t border-dashed border-ink-700"></div><div></div>
+        </div>
+      </div>
+      <div id="chart-labels" class="mt-3 grid grid-cols-4 gap-4 px-1 text-center"></div>
+      <div class="mt-6">
+        <p class="label mb-2">Share of Output</p>
+        <div id="mix" class="flex h-2.5 gap-0.5 overflow-hidden rounded-full"></div>
+      </div>
+    </section>
+
+    <!-- 3. Substations Data Table -->
+    <section class="panel p-5 sm:p-6 lg:col-span-7" aria-labelledby="subs-title">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 id="subs-title" class="label">Regional Substations</h2>
+        <span class="text-xs text-slate-500">Toggle to simulate maintenance</span>
+      </div>
+      <div class="-mx-5 overflow-x-auto sm:-mx-6">
+        <table class="w-full min-w-[560px] text-left text-sm">
+          <thead>
+            <tr class="border-b border-ink-700 text-[11px] uppercase tracking-wider text-slate-500">
+              <th scope="col" class="px-5 py-2.5 font-semibold sm:px-6">Location</th>
+              <th scope="col" class="px-3 py-2.5 font-semibold">Current Load</th>
+              <th scope="col" class="px-3 py-2.5 font-semibold">Status</th>
+              <th scope="col" class="px-5 py-2.5 text-right font-semibold sm:px-6">Maintenance</th>
+            </tr>
+          </thead>
+          <tbody id="subs-body" class="divide-y divide-ink-800"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 4. Interactive Incident Control -->
+    <section class="panel p-5 sm:p-6 lg:col-span-12" aria-labelledby="inc-title">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 id="inc-title" class="label">Incident Control <span id="inc-count" class="num ml-2 normal-case tracking-normal text-slate-500"></span></h2>
+        <label class="relative w-full sm:w-80">
+          <span class="sr-only">Search alerts</span>
+          <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="search" type="search" autocomplete="off" placeholder="Filter by ID, title, location, severity…" class="w-full rounded-lg border border-ink-700 bg-ink-950 py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-600 focus:border-emerald-500/60">
+        </label>
+      </div>
+      <ul id="incidents" class="scroll grid max-h-[420px] grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2"></ul>
+      <p id="no-results" class="hidden py-10 text-center text-sm text-slate-500">No alerts match “<span id="no-results-q" class="text-slate-300"></span>”.</p>
+    </section>
+  </main>
+</div>
+
+<!-- Detail Modal -->
+<div id="modal" data-open="false" class="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" aria-hidden="true">
+  <div class="sheet panel w-full max-w-md p-6" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <div class="mb-4 flex items-start justify-between gap-4">
+      <div>
+        <p id="m-id" class="num text-xs text-slate-500"></p>
+        <h3 id="m-title" class="mt-1 text-base font-semibold text-slate-100"></h3>
+      </div>
+      <button id="m-close" class="rounded-md p-1 text-slate-500 hover:bg-ink-700 hover:text-slate-200" aria-label="Close">
+        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <dl class="mb-4 grid grid-cols-3 gap-3 rounded-lg border border-ink-700 bg-ink-950/60 p-3 text-xs">
+      <div><dt class="label mb-1">Severity</dt><dd id="m-sev"></dd></div>
+      <div><dt class="label mb-1">Location</dt><dd id="m-loc" class="text-slate-200"></dd></div>
+      <div><dt class="label mb-1">Raised</dt><dd id="m-time" class="num text-slate-200"></dd></div>
+    </dl>
+    <p id="m-desc" class="mb-5 text-sm leading-relaxed text-slate-400"></p>
+    <div class="flex justify-end gap-2">
+      <button id="m-dismiss" class="rounded-md border border-ink-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-ink-800">Close</button>
+      <button id="m-ack" class="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- State ---------- */
+  const state = {
+    substations: [
+      { id: 'SS-N01', location: 'North Ridge',   region: 'Highlands',   capacity: 420, load: 68, maintenance: false },
+      { id: 'SS-E02', location: 'Eastport Bay',  region: 'Coastal',     capacity: 380, load: 81, maintenance: false },
+      { id: 'SS-S03', location: 'Southgate',     region: 'Metro Core',  capacity: 510, load: 74, maintenance: false },
+      { id: 'SS-W04', location: 'Westfield Mesa', region: 'Desert Belt', capacity: 340, load: 57, maintenance: false }
+    ],
+    generation: [
+      { key: 'Solar',   mw: 412, color: '#fbbf24', base: 412 },
+      { key: 'Wind',    mw: 296, color: '#22d3ee', base: 296 },
+      { key: 'Hydro',   mw: 248, color: '#60a5fa', base: 248 },
+      { key: 'Nuclear', mw: 640, color: '#34d399', base: 640 }
+    ],
+    incidents: [
+      { id: 'INC-4821', sev: 'critical', title: 'Transformer T3 thermal overrun',    loc: 'Eastport Bay',   mins: 4,  ack: false, desc: 'Oil temperature on transformer T3 exceeded 105°C. Cooling fans at maximum duty. Recommend load shedding of 12% on feeders E2-E4.' },
+      { id: 'INC-4819', sev: 'warning',  title: 'Frequency deviation 49.92 Hz',       loc: 'Southgate',      mins: 11, ack: false, desc: 'Sustained under-frequency for 38s. Automatic generation control engaged; spinning reserve dispatch pending confirmation.' },
+      { id: 'INC-4817', sev: 'warning',  title: 'Wind farm curtailment request',      loc: 'North Ridge',    mins: 19, ack: false, desc: 'Gusts above 25 m/s forecast for the next 90 minutes. Turbine cluster NR-7 requests a 30% curtailment window.' },
+      { id: 'INC-4812', sev: 'info',     title: 'Scheduled relay firmware update',    loc: 'Westfield Mesa', mins: 42, ack: true,  desc: 'Protection relay firmware v4.2.1 staged for rollout during the 02:00–04:00 low-demand window.' },
+      { id: 'INC-4809', sev: 'critical', title: 'SCADA link packet loss 14%',         loc: 'Westfield Mesa', mins: 57, ack: false, desc: 'Primary fibre link to RTU-W04 degraded. Failover to microwave backhaul active; telemetry latency elevated to 820ms.' },
+      { id: 'INC-4803', sev: 'info',     title: 'Solar array inverter recalibrated',  loc: 'Southgate',      mins: 88, ack: true,  desc: 'Inverter bank S-12 reactive power setpoint recalibrated after sensor drift. Output nominal.' }
+    ],
+    query: '',
+    activeIncident: null
+  };
+
+  /* ---------- Helpers ---------- */
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const jitter = (v, amt) => v + (Math.random() - 0.5) * 2 * amt;
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+
+  const SEV = {
+    critical: { label: 'Critical', cls: 'border-rose-500/40 bg-rose-500/10 text-rose-400', dot: 'bg-rose-500' },
+    warning:  { label: 'Warning',  cls: 'border-amber-500/40 bg-amber-500/10 text-amber-400', dot: 'bg-amber-400' },
+    info:     { label: 'Info',     cls: 'border-sky-500/40 bg-sky-500/10 text-sky-400', dot: 'bg-sky-400' }
+  };
+  const LEVEL = {
+    optimal:  { label: 'Optimal',  badge: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400', text: 'text-emerald-400 glow-ok',  bar: '#34d399', accent: 'via-emerald-400' },
+    warning:  { label: 'Warning',  badge: 'border-amber-500/40 bg-amber-500/10 text-amber-400',       text: 'text-amber-400 glow-warn',  bar: '#fbbf24', accent: 'via-amber-400' },
+    critical: { label: 'Critical', badge: 'border-rose-500/40 bg-rose-500/10 text-rose-400',          text: 'text-rose-400 glow-crit',   bar: '#f43f5e', accent: 'via-rose-500' }
+  };
+
+  /* ---------- Derived state (pure) ---------- */
+  function subStatus(s) {
+    if (s.maintenance) return { key: 'offline', label: 'Offline', cls: 'text-slate-400', dot: 'bg-slate-500', fill: '#475569' };
+    if (s.load >= 90) return { key: 'overload', label: 'Overload', cls: 'text-rose-400', dot: 'bg-rose-500', fill: '#f43f5e' };
+    if (s.load >= 80) return { key: 'high', label: 'High Load', cls: 'text-amber-400', dot: 'bg-amber-400', fill: '#fbbf24' };
+    return { key: 'online', label: 'Online', cls: 'text-emerald-400', dot: 'bg-emerald-400', fill: '#34d399' };
+  }
+
+  function gridMetrics() {
+    const subs = state.substations;
+    const online = subs.filter((s) => !s.maintenance);
+    const capacity = online.reduce((a, s) => a + s.capacity, 0);
+    const draw = online.reduce((a, s) => a + (s.capacity * s.load) / 100, 0);
+    const gen = state.generation.reduce((a, g) => a + g.mw, 0);
+    const overload = online.reduce((a, s) => a + Math.max(0, s.load - 85) * 1.5, 0);
+    const critOpen = state.incidents.filter((i) => i.sev === 'critical' && !i.ack).length;
+    const health = clamp((online.length / subs.length) * 100 - overload - critOpen * 2, 0, 100);
+    const level = health >= 85 ? 'optimal' : health >= 60 ? 'warning' : 'critical';
+    return { online: online.length, capacity, draw, gen, health, level, reserve: gen ? ((gen - draw) / gen) * 100 : 0 };
+  }
+
+  /* ---------- Renderers (each owns its DOM slice) ---------- */
+  function renderHero() {
+    const m = gridMetrics();
+    const L = LEVEL[m.level];
+    const h = $('health');
+    h.textContent = m.health.toFixed(1);
+    h.parentElement.className = 'num text-5xl font-bold leading-none ' + L.text;
+    $('health-bar').style.width = m.health + '%';
+    $('health-bar').style.backgroundColor = L.bar;
+    $('hero-accent').className = 'pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent ' + L.accent;
+    const badge = $('badge');
+    badge.className = 'inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ' + L.badge;
+    badge.innerHTML = '<span class="pulse-dot h-1.5 w-1.5 rounded-full" style="background:' + L.bar + '"></span>' + L.label;
+    $('draw').textContent = fmt(m.draw);
+    $('capacity').textContent = fmt(m.capacity);
+    $('gen-total').textContent = fmt(m.gen);
+    const r = $('reserve');
+    r.textContent = m.reserve.toFixed(1) + '%';
+    r.className = 'num ' + (m.reserve < 10 ? 'text-rose-400' : m.reserve < 25 ? 'text-amber-400' : 'text-emerald-400');
+    $('online').textContent = m.online;
+    $('open-incidents').textContent = state.incidents.filter((i) => !i.ack).length;
+  }
+
+  const chartRefs = {};
+  function mountChart() {
+    const chart = $('chart'), labels = $('chart-labels'), mix = $('mix');
+    state.generation.forEach((g) => {
+      const col = document.createElement('div');
+      col.className = 'relative z-10 flex h-full flex-col items-center justify-end';
+      col.innerHTML =
+        '<span class="num mb-1.5 text-xs font-medium text-slate-200"></span>' +
+        '<div class="bar w-full max-w-[56px] rounded-t-md" style="height:0;background:linear-gradient(180deg,' + g.color + ',' + g.color + '33);box-shadow:0 0 22px ' + g.color + '33"></div>';
+      chart.appendChild(col);
+      const lab = document.createElement('div');
+      lab.innerHTML = '<p class="text-xs font-medium text-slate-300">' + g.key + '</p><p class="num text-[11px] text-slate-500"></p>';
+      labels.appendChild(lab);
+      const seg = document.createElement('div');
+      seg.className = 'fill h-full';
+      seg.style.background = g.color;
+      seg.title = g.key;
+      mix.appendChild(seg);
+      chartRefs[g.key] = { value: col.firstChild, bar: col.lastChild, share: lab.lastChild, seg };
+    });
+  }
+
+  function renderChart() {
+    const total = state.generation.reduce((a, g) => a + g.mw, 0);
+    const max = Math.max(...state.generation.map((g) => g.mw)) * 1.15;
+    state.generation.forEach((g) => {
+      const r = chartRefs[g.key];
+      const share = (g.mw / total) * 100;
+      r.value.textContent = fmt(g.mw);
+      r.bar.style.height = ((g.mw / max) * 100).toFixed(2) + '%';
+      r.share.textContent = share.toFixed(1) + '%';
+      r.seg.style.width = share.toFixed(2) + '%';
+    });
+  }
+
+  const rowRefs = {};
+  function mountTable() {
+    const body = $('subs-body');
+    state.substations.forEach((s) => {
+      const tr = document.createElement('tr');
+      tr.className = 'transition-colors hover:bg-ink-800/40';
+      tr.innerHTML =
+        '<td class="px-5 py-3.5 sm:px-6"><p class="font-medium text-slate-200">' + s.location + '</p><p class="num text-[11px] text-slate-500">' + s.id + ' · ' + s.region + '</p></td>' +
+        '<td class="px-3 py-3.5"><div class="flex items-center gap-3"><div class="h-1.5 w-24 overflow-hidden rounded-full bg-ink-700"><div data-r="fill" class="fill h-full rounded-full"></div></div><span data-r="load" class="num w-12 text-right text-slate-200"></span></div></td>' +
+        '<td class="px-3 py-3.5"><span data-r="status" class="inline-flex items-center gap-1.5 text-xs font-medium"><span data-r="dot" class="h-1.5 w-1.5 rounded-full"></span><span data-r="label"></span></span></td>' +
+        '<td class="px-5 py-3.5 text-right sm:px-6"><button type="button" role="switch" data-r="switch" class="switch inline-block align-middle" aria-checked="false" aria-label="Simulate maintenance mode for ' + s.location + '"></button></td>';
+      const q = (k) => tr.querySelector('[data-r="' + k + '"]');
+      rowRefs[s.id] = { tr, fill: q('fill'), load: q('load'), status: q('status'), dot: q('dot'), label: q('label'), sw: q('switch') };
+      rowRefs[s.id].sw.addEventListener('click', () => toggleMaintenance(s.id));
+      body.appendChild(tr);
+    });
+  }
+
+  function renderRow(id) {
+    const s = state.substations.find((x) => x.id === id);
+    const r = rowRefs[id];
+    const st = subStatus(s);
+    const load = s.maintenance ? 0 : s.load;
+    r.fill.style.width = load + '%';
+    r.fill.style.backgroundColor = st.fill;
+    r.load.textContent = load.toFixed(0) + '%';
+    r.load.className = 'num w-12 text-right ' + (s.maintenance ? 'text-slate-500' : 'text-slate-200');
+    r.status.className = 'inline-flex items-center gap-1.5 text-xs font-medium ' + st.cls;
+    r.dot.className = 'h-1.5 w-1.5 rounded-full ' + st.dot + (st.key === 'overload' ? ' pulse-dot' : '');
+    r.label.textContent = st.label;
+    r.sw.setAttribute('aria-checked', String(s.maintenance));
+    r.tr.style.opacity = s.maintenance ? '0.6' : '1';
+  }
+
+  const incRefs = {};
+  function mountIncidents() {
+    const list = $('incidents');
+    state.incidents.forEach((inc) => {
+      const li = document.createElement('li');
+      const sev = SEV[inc.sev];
+      li.innerHTML =
+        '<button type="button" class="group flex w-full items-center gap-3 rounded-lg border border-ink-700 bg-ink-950/50 px-3.5 py-3 text-left transition hover:border-slate-600 hover:bg-ink-800/60">' +
+          '<span class="h-8 w-1 shrink-0 rounded-full ' + sev.dot + '"></span>' +
+          '<span class="min-w-0 flex-1"><span class="flex items-center gap-2"><span class="num text-[11px] text-slate-500">' + inc.id + '</span><span class="rounded border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ' + sev.cls + '">' + sev.label + '</span><span data-r="ack" class="hidden rounded border border-slate-600 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider text-slate-400">Ack</span></span>' +
+          '<span class="mt-1 block truncate text-sm font-medium text-slate-200">' + inc.title + '</span>' +
+          '<span class="block text-xs text-slate-500">' + inc.loc + ' · <span data-r="time" class="num"></span></span></span>' +
+          '<svg class="h-4 w-4 shrink-0 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>' +
+        '</button>';
+      li.firstChild.addEventListener('click', () => openModal(inc.id));
+      incRefs[inc.id] = { li, ack: li.querySelector('[data-r="ack"]'), time: li.querySelector('[data-r="time"]'), haystack: [inc.id, inc.title, inc.loc, inc.sev].join(' ').toLowerCase() };
+      list.appendChild(li);
+    });
+  }
+
+  function renderIncident(id) {
+    const inc = state.incidents.find((i) => i.id === id);
+    const r = incRefs[id];
+    r.ack.classList.toggle('hidden', !inc.ack);
+    r.li.firstChild.style.opacity = inc.ack ? '0.65' : '1';
+    r.time.textContent = inc.mins < 60 ? inc.mins + 'm ago' : Math.floor(inc.mins / 60) + 'h ' + (inc.mins % 60) + 'm ago';
+  }
+
+  function renderFilter() {
+    const terms = state.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let visible = 0;
+    state.incidents.forEach((inc) => {
+      const match = terms.every((t) => incRefs[inc.id].haystack.includes(t));
+      incRefs[inc.id].li.hidden = !match;
+      if (match) visible++;
+    });
+    $('inc-count').textContent = visible + ' / ' + state.incidents.length;
+    $('no-results').classList.toggle('hidden', visible > 0);
+    $('no-results-q').textContent = state.query.trim();
+  }
+
+  /* ---------- Actions ---------- */
+  function toggleMaintenance(id) {
+    const s = state.substations.find((x) => x.id === id);
+    s.maintenance = !s.maintenance;
+    renderRow(id);
+    renderHero();
+  }
+
+  let searchFrame = 0;
+  function setQuery(q) {
+    state.query = q;
+    cancelAnimationFrame(searchFrame);
+    searchFrame = requestAnimationFrame(renderFilter);
+  }
+
+  let lastFocus = null;
+  function openModal(id) {
+    const inc = state.incidents.find((i) => i.id === id);
+    state.activeIncident = id;
+    lastFocus = document.activeElement;
+    const sev = SEV[inc.sev];
+    $('m-id').textContent = inc.id;
+    $('m-title').textContent = inc.title;
+    $('m-sev').innerHTML = '<span class="rounded border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ' + sev.cls + '">' + sev.label + '</span>';
+    $('m-loc').textContent = inc.loc;
+    $('m-time').textContent = incRefs[id].time.textContent;
+    $('m-desc').textContent = inc.desc;
+    $('m-ack').textContent = inc.ack ? 'Reopen' : 'Acknowledge';
+    const m = $('modal');
+    m.dataset.open = 'true';
+    m.setAttribute('aria-hidden', 'false');
+    $('m-close').focus();
+  }
+
+  function closeModal() {
+    if (!state.activeIncident) return;
+    state.activeIncident = null;
+    const m = $('modal');
+    m.dataset.open = 'false';
+    m.setAttribute('aria-hidden', 'true');
+    if (lastFocus) lastFocus.focus();
+  }
+
+  function toggleAck() {
+    const inc = state.incidents.find((i) => i.id === state.activeIncident);
+    if (!inc) return;
+    inc.ack = !inc.ack;
+    renderIncident(inc.id);
+    renderHero();
+    closeModal();
+  }
+
+  /* ---------- Telemetry simulation ---------- */
+  function tick() {
+    state.substations.forEach((s) => {
+      if (s.maintenance) return;
+      s.load = clamp(jitter(s.load, 3.2), 35, 98);
+      renderRow(s.id);
+    });
+    state.generation.forEach((g) => {
+      const swing = g.key === 'Nuclear' ? 6 : g.key === 'Hydro' ? 14 : 34;
+      g.mw = clamp(jitter(g.mw, swing) * 0.85 + g.base * 0.15, g.base * 0.4, g.base * 1.5);
+    });
+    renderChart();
+    renderHero();
+  }
+
+  function tickClock() {
+    $('clock').textContent = new Date().toISOString().slice(11, 19) + ' UTC';
+  }
+
+  function tickIncidentAges() {
+    state.incidents.forEach((i) => { i.mins += 1; renderIncident(i.id); });
+  }
+
+  /* ---------- Init ---------- */
+  mountChart();
+  mountTable();
+  mountIncidents();
+  state.substations.forEach((s) => renderRow(s.id));
+  state.incidents.forEach((i) => renderIncident(i.id));
+  renderChart();
+  renderHero();
+  renderFilter();
+  tickClock();
+
+  $('search').addEventListener('input', (e) => setQuery(e.target.value));
+  $('m-close').addEventListener('click', closeModal);
+  $('m-dismiss').addEventListener('click', closeModal);
+  $('m-ack').addEventListener('click', toggleAck);
+  $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (!state.activeIncident) return;
+    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Tab') {
+      const f = [$('m-close'), $('m-dismiss'), $('m-ack')];
+      const i = f.indexOf(document.activeElement);
+      if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    }
+  });
+
+  setInterval(tick, 2000);
+  setInterval(tickClock, 1000);
+  setInterval(tickIncidentAges, 60000);
+})();
+</script>
+</body>
+</html>
